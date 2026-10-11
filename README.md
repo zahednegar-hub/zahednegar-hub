@@ -1,8 +1,8 @@
 # Negar Zahed
 
-**UI/UX Designer · Web Designer · Frontend Developer**
+**UI/UX Designer · Web Designer · Frontend Developer**<br>*AI-Assisted Digital Experience Designer*
 
-I design clear interfaces and interactive web experiences, then build them myself. My work runs from information architecture and interface design to responsive front-end implementation, so nothing gets lost between the design file and the browser.
+I design clear interfaces and interactive web experiences, then build them myself. My work runs from information architecture and interface design to responsive front-end implementation, so nothing gets lost between the design file and the browser. I use AI tools throughout to research, explore and build faster, while the design decisions stay mine.
 
 [Portfolio](https://negarportfolio.ir/portfolio/) · [Email](mailto:zahednegar@gmail.com)
 
@@ -10,12 +10,21 @@ I design clear interfaces and interactive web experiences, then build them mysel
 
 ## What I do
 
-- **UI/UX design:** user journeys, information architecture, wireframes and high-fidelity interfaces
-- **Web design:** visual hierarchy, layout and personal branding for the web
-- **Interaction design:** motion, states and feedback that carry meaning rather than decoration
-- **Responsive front-end development:** layouts that hold from wide desktop down to a 390 px phone
-- **Persian (RTL) and bilingual interfaces:** Persian treated as a first-class experience, not a translation
-- **Design systems:** shared tokens, components and rules that keep a product consistent
+**1. UI/UX design**
+- User journeys, information architecture, wireframes and high-fidelity interfaces
+- Interaction design: motion, states and feedback that carry meaning rather than decoration
+- Design systems: shared tokens, components and rules that keep a product consistent
+
+**2. Web design**
+- Visual hierarchy, layout and personal branding for the web
+- Persian (RTL) and bilingual websites, with Persian treated as a first-class experience rather than a translation
+
+**3. Front-end development**
+- Responsive layouts that hold from wide desktop down to a 390 px phone
+- Semantic, accessible HTML, CSS and JavaScript
+
+**4. AI-assisted design and development**
+- AI used across research, prototyping and front-end implementation, with every decision and every line reviewed by me ([how I work](#ai-assisted-workflow))
 
 ## Selected work
 
