@@ -17,10 +17,12 @@ from rich.table import Table
 from rich.text import Text
 
 from . import __version__
-from .agent import DEFAULT_MODEL, Fanoos
+from .agent import Fanoos
 from .errors import FanoosError
-from .review import SCORE_KEYS, SCORE_LABELS, Review, contains_persian, parse_review
+from .providers import PROVIDERS, preferred_provider_name
+from .review import SCORE_KEYS, SCORE_LABELS, Review, contains_persian
 from .sources import load_source
+from .system_prompt import NO_LIVE_SEARCH_FOOTER
 
 AMBER = "#f2a93b"
 _JSON_FENCE = "```json"
@@ -142,7 +144,41 @@ def render_scorecard(review: Review, bidi: bool = False) -> Panel:
         for i, action in enumerate(review.next_actions, 1):
             rtl = contains_persian(action)
             parts.append(Text(f"{i}. {to_visual(action, bidi)}", justify="right" if rtl else "left"))
-    return Panel(Group(*parts), title=f"[bold {AMBER}]Fanoos · فانوس[/] scorecard", border_style=AMBER, padding=(1, 2))
+    if not review.live_search:
+        parts.append(Text(""))
+        parts.append(Text(to_visual(NO_LIVE_SEARCH_FOOTER, bidi), style="grey50", justify="right"))
+    subtitle = f"[grey50]{review.provider} · {review.model}[/]" if review.provider else None
+    return Panel(
+        Group(*parts),
+        title=f"[bold {AMBER}]Fanoos · فانوس[/] scorecard",
+        subtitle=subtitle,
+        border_style=AMBER,
+        padding=(1, 2),
+    )
+
+
+def render_providers() -> Table:
+    """Build the ``fanoos providers`` table from the environment (keys are never shown)."""
+    selected = preferred_provider_name()
+    table = Table(title="Fanoos providers", title_style=f"bold {AMBER}", border_style="grey35")
+    table.add_column("Provider")
+    table.add_column("API key")
+    table.add_column("Status")
+    table.add_column("Default model")
+    table.add_column("Live search")
+    table.add_column("Tier")
+    for provider in PROVIDERS.values():
+        name = provider.name + ("  ◀ selected" if provider.name == selected else "")
+        status = "[green]✓ configured[/]" if provider.configured else "[grey50]✗ not set[/]"
+        table.add_row(
+            Text(name, style=f"bold {AMBER}" if provider.name == selected else ""),
+            provider.env_var,
+            status,
+            provider.default_model,
+            "web + X" if provider.live_search else "—",
+            "free" if provider.free_tier else "paid",
+        )
+    return table
 
 
 # --- streaming ------------------------------------------------------------------------------
@@ -187,10 +223,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fanoos",
         description="Fanoos (فانوس): a bilingual AI portfolio critic for UI/UX and web designers.",
-        epilog="The API key is read from the XAI_API_KEY environment variable (or ./.env).",
+        epilog="API keys are read from XAI_API_KEY, GEMINI_API_KEY or GROQ_API_KEY (environment or ./.env).",
     )
     parser.add_argument("--version", action="version", version=f"fanoos {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="<command>")
+
+    sub.add_parser(
+        "providers",
+        help="Show which AI providers are configured.",
+        description="Show which AI providers are configured (from the environment) and which one is selected.",
+    )
 
     review = sub.add_parser(
         "review", help="Review a portfolio URL or PDF.", description="Review a portfolio URL or PDF."
@@ -200,7 +242,12 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument(
         "--focus", metavar="TEXT", help="Extra request, e.g. 'Focus on the Venture Compass case study'."
     )
-    review.add_argument("--model", help=f"Model ID (default: $FANOOS_MODEL or {DEFAULT_MODEL}).")
+    review.add_argument(
+        "--provider",
+        choices=tuple(PROVIDERS),
+        help="AI provider (default: $FANOOS_PROVIDER, else the first configured of xai, gemini, groq).",
+    )
+    review.add_argument("--model", help="Model ID (default: $FANOOS_MODEL, else the provider's default).")
     review.add_argument("--json", action="store_true", help="Print the structured review as JSON only.")
     review.add_argument("--raw", action="store_true", help="Print the model's reply unparsed.")
     review.add_argument("--no-stream", action="store_true", help="Wait for the full reply, then render it.")
@@ -211,10 +258,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def cmd_review(args: argparse.Namespace, out: Console, err: Console) -> int:
     """Run ``fanoos review``. Returns the process exit code."""
-    status = None if args.json or args.raw else err
-    if status:
-        err.print(f"[{AMBER}]🏮 Fanoos[/] is reading [bold]{args.target}[/] …")
-    agent = Fanoos(model=args.model)  # fail fast on a missing key, before any download
+    agent = Fanoos(provider=args.provider, model=args.model)  # fail fast on a missing key, before any download
+    if not (args.json or args.raw):
+        err.print(
+            f"[{AMBER}]🏮 Fanoos[/] is reading [bold]{args.target}[/] "
+            f"[grey50]({agent.provider.name} · {agent.model})[/] …"
+        )
     source = load_source(args.target, fetch=not args.no_fetch)
 
     if args.raw:
@@ -241,7 +290,7 @@ def cmd_review(args: argparse.Namespace, out: Console, err: Console) -> int:
             out.file.write(stream.feed(delta))
             out.file.flush()
         out.file.write(stream.flush() + "\n\n")
-        review = parse_review("".join(chunks))
+        review = agent.finish("".join(chunks))
 
     out.print(render_scorecard(review, args.bidi))
     return 0
@@ -268,6 +317,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     err = Console(file=sys.stderr, highlight=False)
     load_dotenv()
     try:
+        if args.command == "providers":
+            out.print(render_providers())
+            return 0
         return cmd_review(args, out, err)
     except FanoosError as exc:
         err.print(Text("error: ", style="bold red") + Text(str(exc)))

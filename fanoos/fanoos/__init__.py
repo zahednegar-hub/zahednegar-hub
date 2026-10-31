@@ -4,13 +4,13 @@ Quick use::
 
     from fanoos import Fanoos, load_source
 
-    review = Fanoos().review(load_source("https://example.com"), language="en")
+    review = Fanoos(provider="gemini").review(load_source("https://example.com"), language="en")
     print(review.verdict, review.overall_score)
 """
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .agent import DEFAULT_MODEL, Fanoos
 from .errors import (
@@ -22,7 +22,9 @@ from .errors import (
     NetworkError,
     RateLimitError,
     SourceError,
+    UnknownProviderError,
 )
+from .providers import PROVIDERS, Provider, select_provider
 from .review import SCORE_KEYS, CriticalIssue, Review, parse_review
 from .sources import PortfolioSource, load_source
 from .system_prompt import SYSTEM_PROMPT
@@ -46,4 +48,8 @@ __all__ = [
     "APIError",
     "MalformedOutputError",
     "SourceError",
+    "UnknownProviderError",
+    "PROVIDERS",
+    "Provider",
+    "select_provider",
 ]

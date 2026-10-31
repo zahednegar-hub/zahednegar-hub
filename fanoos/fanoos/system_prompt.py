@@ -75,4 +75,14 @@ English exactly as shown):
 Scores are integers from 0 to 100. Do not add any text after the code block.
 """
 
-__all__ = ["SYSTEM_PROMPT", "OUTPUT_FORMAT_INSTRUCTIONS"]
+NO_LIVE_SEARCH_FOOTER: str = "بدون جستجوی زنده"
+"""Footer marking a review written without live web/X search."""
+
+NO_LIVE_SEARCH_INSTRUCTIONS: str = f"""\
+Live web and X search are not available for this review. Silently answer from
+your own knowledge instead: do not mention tools, searching or this limitation
+anywhere in the review. As the very last line of the written review (before
+the json block), write exactly: {NO_LIVE_SEARCH_FOOTER}
+"""
+
+__all__ = ["SYSTEM_PROMPT", "OUTPUT_FORMAT_INSTRUCTIONS", "NO_LIVE_SEARCH_FOOTER", "NO_LIVE_SEARCH_INSTRUCTIONS"]

@@ -24,7 +24,7 @@ def _status_error(cls: type[openai.APIStatusError], status: int, headers: dict |
 
 
 def test_missing_api_key_raises() -> None:
-    with pytest.raises(MissingAPIKeyError, match="XAI_API_KEY"):
+    with pytest.raises(MissingAPIKeyError, match="GEMINI_API_KEY"):
         Fanoos()
 
 
@@ -47,7 +47,8 @@ def test_request_shape(sample_reply: str) -> None:
     assert call["model"] == "m"
     assert call["stream"] is True
     assert call["tools"] == [{"type": "web_search"}, {"type": "x_search"}]
-    assert call["input"][0] == {"role": "system", "content": SYSTEM_PROMPT}
+    assert call["input"][0]["role"] == "system"
+    assert call["input"][0]["content"].startswith(SYSTEM_PROMPT.strip())
     user = call["input"][-1]["content"]
     assert "https://example.com" in user and "Focus on case studies" in user and "Hello" in user
     assert review.scores["narrative"] == 62

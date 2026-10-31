@@ -14,7 +14,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .errors import MalformedOutputError
+from .errors import MalformedOutputError, bilingual
 
 SCORE_KEYS: tuple[str, ...] = (
     "narrative",
@@ -59,6 +59,9 @@ class Review:
         scores: 0-100 per criterion, keyed by :data:`SCORE_KEYS`.
         report: The written review as the model produced it (without the
             JSON block).
+        provider: Name of the provider that produced the review (set by the agent).
+        model: Model ID that produced the review (set by the agent).
+        live_search: Whether live web/X search was available for this review.
     """
 
     verdict: str
@@ -68,6 +71,9 @@ class Review:
     next_actions: list[str] = field(default_factory=list)
     scores: dict[str, int] = field(default_factory=dict)
     report: str = ""
+    provider: str = ""
+    model: str = ""
+    live_search: bool = True
 
     @property
     def overall_score(self) -> int | None:
@@ -128,7 +134,9 @@ def parse_review(text: str) -> Review:
             sections contain a usable review.
     """
     if not text or not text.strip():
-        raise MalformedOutputError("The model returned an empty reply. Try again.")
+        raise MalformedOutputError(
+            bilingual("The model returned an empty reply. Try again.", "مدل پاسخ خالی برگرداند. دوباره امتحان کنید.")
+        )
 
     report, json_text = split_report(text)
     if json_text is not None:
@@ -289,9 +297,11 @@ def _from_markdown(report: str) -> Review:
     )
     if not (review.first_impression or review.critical_issues or review.scores):
         raise MalformedOutputError(
-            "Could not read a structured review from the model's reply "
-            "(no JSON summary and no recognisable sections). Try again, or use "
-            "--raw to see the reply as-is."
+            bilingual(
+                "Could not read a structured review from the model's reply (no JSON summary and no "
+                "recognisable sections). Try again, or use --raw to see the reply as-is.",
+                "پاسخ مدل ساختار قابل خواندن نداشت. دوباره امتحان کنید یا با ‎--raw‎ پاسخ خام را ببینید.",
+            )
         )
     return review
 

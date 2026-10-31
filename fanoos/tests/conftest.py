@@ -78,9 +78,23 @@ class FakeResponses:
         return iter(self.events)
 
 
+def chat_chunks(text: str, size: int = 7) -> list[SimpleNamespace]:
+    """Split ``text`` into fake Chat Completions streaming chunks."""
+    chunks = [SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=None))])]
+    chunks += [
+        SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=text[i : i + size]))])
+        for i in range(0, len(text), size)
+    ]
+    chunks.append(SimpleNamespace(choices=[]))
+    return chunks
+
+
 class FakeClient:
+    """Stands in for ``openai.OpenAI``: ``responses`` for xAI, ``chat.completions`` for the others."""
+
     def __init__(self, events=None, error: BaseException | None = None) -> None:
         self.responses = FakeResponses(events, error)
+        self.chat = SimpleNamespace(completions=self.responses)
 
 
 @pytest.fixture
@@ -96,6 +110,6 @@ def sample_prose() -> str:
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch, tmp_path):
     """Keep the real key and any local .env out of every test."""
-    monkeypatch.delenv("XAI_API_KEY", raising=False)
-    monkeypatch.delenv("FANOOS_MODEL", raising=False)
+    for var in ("XAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "FANOOS_PROVIDER", "FANOOS_MODEL"):
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.chdir(tmp_path)

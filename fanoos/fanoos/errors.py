@@ -1,42 +1,83 @@
 """Exceptions raised by Fanoos.
 
-Every error carries a short, human-readable message that the CLI prints as-is,
-so messages say what went wrong *and* what to do about it.
+Every error carries a short, human-readable message that the CLI and the web
+API show as-is. Messages are bilingual (English, then Persian) and say what
+went wrong *and* what to do about it.
 """
 
 from __future__ import annotations
+
+
+def bilingual(en: str, fa: str) -> str:
+    """Join an English and a Persian message on separate lines."""
+    return f"{en}\n{fa}"
 
 
 class FanoosError(Exception):
     """Base class for every error Fanoos raises on purpose."""
 
     exit_code: int = 1
+    http_status: int = 500
 
 
 class MissingAPIKeyError(FanoosError):
-    """``XAI_API_KEY`` is not set in the environment."""
+    """The selected provider's API key is not set (or no provider is configured at all)."""
 
     exit_code = 2
+    http_status = 503
 
-    def __init__(self) -> None:
+    def __init__(self, env_var: str | None = None, signup_url: str | None = None) -> None:
+        if env_var is None:
+            super().__init__(
+                bilingual(
+                    "No AI provider is configured. Set one of XAI_API_KEY, GEMINI_API_KEY (free) "
+                    "or GROQ_API_KEY (free), or copy .env.example to .env and fill it in. "
+                    "Run `fanoos providers` to check.",
+                    "هیچ ارائه‌دهنده‌ی هوش مصنوعی تنظیم نشده. یکی از کلیدهای XAI_API_KEY، "
+                    "GEMINI_API_KEY (رایگان) یا GROQ_API_KEY (رایگان) را تنظیم کنید.",
+                )
+            )
+        else:
+            where = f" Get one at {signup_url}." if signup_url else ""
+            super().__init__(
+                bilingual(
+                    f"{env_var} is not set.{where} Then export it "
+                    f'(macOS/Linux: export {env_var}=...  ·  Windows PowerShell: $env:{env_var} = "...") '
+                    "or put it in .env.",
+                    f"کلید {env_var} تنظیم نشده. آن را در متغیر محیطی یا فایل ‎.env‎ قرار دهید.",
+                )
+            )
+        self.env_var = env_var
+
+
+class UnknownProviderError(FanoosError):
+    """``FANOOS_PROVIDER`` (or ``--provider``) names a provider Fanoos does not know."""
+
+    exit_code = 2
+    http_status = 400
+
+    def __init__(self, name: str, known: list[str]) -> None:
+        options = ", ".join(known)
         super().__init__(
-            "XAI_API_KEY is not set.\n"
-            "Create a key at https://console.x.ai, then export it:\n"
-            "  macOS/Linux:  export XAI_API_KEY=xai-...\n"
-            '  Windows (PowerShell):  $env:XAI_API_KEY = "xai-..."\n'
-            "or copy .env.example to .env and fill it in."
+            bilingual(
+                f"Unknown provider '{name}'. Choose one of: {options}.",
+                f"ارائه‌دهنده‌ی «{name}» شناخته نشد. یکی از این‌ها را انتخاب کنید: {options}",
+            )
         )
 
 
 class AuthenticationFailedError(FanoosError):
-    """The xAI API rejected the key."""
+    """The provider rejected the API key."""
 
     exit_code = 2
+    http_status = 502
 
-    def __init__(self) -> None:
+    def __init__(self, provider: str = "xAI", env_var: str = "XAI_API_KEY") -> None:
         super().__init__(
-            "The xAI API rejected your key (401/403). Check that XAI_API_KEY is "
-            "correct and still active at https://console.x.ai."
+            bilingual(
+                f"{provider} rejected your API key. Check that {env_var} is correct and still active.",
+                f"{provider} کلید API شما را نپذیرفت. درستی و فعال بودن {env_var} را بررسی کنید.",
+            )
         )
 
 
@@ -44,40 +85,53 @@ class NetworkError(FanoosError):
     """The API (or the portfolio URL) could not be reached."""
 
     exit_code = 3
+    http_status = 504
 
 
 class RateLimitError(FanoosError):
-    """The xAI API answered 429 Too Many Requests."""
+    """The provider answered 429 Too Many Requests, even after automatic retries."""
 
     exit_code = 4
+    http_status = 429
 
-    def __init__(self, retry_after: str | None = None) -> None:
-        hint = f" Try again in {retry_after} seconds." if retry_after else " Wait a minute and try again."
-        super().__init__("Rate limit reached (HTTP 429): too many requests or tokens for your xAI plan." + hint)
+    def __init__(self, provider: str = "xAI", retry_after: str | None = None) -> None:
+        wait = f"{retry_after} seconds" if retry_after else "a minute"
+        super().__init__(
+            bilingual(
+                f"{provider} rate limit reached (HTTP 429), even after automatic retries. "
+                f"Free tiers allow a limited number of requests per minute and per day. Try again in {wait}.",
+                f"سقف درخواست {provider} پر شده (HTTP 429). سهمیه‌ی رایگان محدود است؛ کمی بعد دوباره امتحان کنید.",
+            )
+        )
         self.retry_after = retry_after
 
 
 class APIError(FanoosError):
-    """Any other error status returned by the xAI API."""
+    """Any other error returned by the provider."""
 
     exit_code = 5
+    http_status = 502
 
 
 class MalformedOutputError(FanoosError):
     """The model's reply could not be turned into a :class:`~fanoos.review.Review`."""
 
     exit_code = 6
+    http_status = 502
 
 
 class SourceError(FanoosError):
     """The portfolio input (URL or PDF path) could not be read."""
 
     exit_code = 7
+    http_status = 400
 
 
 __all__ = [
+    "bilingual",
     "FanoosError",
     "MissingAPIKeyError",
+    "UnknownProviderError",
     "AuthenticationFailedError",
     "NetworkError",
     "RateLimitError",

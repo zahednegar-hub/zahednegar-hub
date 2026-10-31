@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fanoos"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fanoos (فانوس): a bilingual Persian/English AI portfolio critic and career coach for UI/UX and web designers."
 readme = "README.md"
 requires-python = ">=3.10"

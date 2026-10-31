@@ -17,7 +17,9 @@ from .conftest import FakeClient, text_events
 @pytest.fixture
 def fake_agent(monkeypatch, sample_reply: str) -> FakeClient:
     client = FakeClient(text_events(sample_reply))
-    monkeypatch.setattr(cli, "Fanoos", lambda model=None: Fanoos(client=client, model=model))
+    monkeypatch.setattr(
+        cli, "Fanoos", lambda provider=None, model=None: Fanoos(client=client, provider=provider, model=model)
+    )
     monkeypatch.setattr(cli, "load_source", lambda target, fetch=True: PortfolioSource("url", target, "page text"))
     return client
 
@@ -64,7 +66,7 @@ def test_missing_key_message(monkeypatch, capsys) -> None:
     monkeypatch.setattr(cli, "load_source", lambda target, fetch=True: PortfolioSource("url", target, ""))
     assert main(["review", "https://example.com"]) == 2
     err = capsys.readouterr().err
-    assert "XAI_API_KEY is not set" in err
+    assert "No AI provider is configured" in err and "GEMINI_API_KEY" in err
 
 
 def test_bad_path_message(monkeypatch, capsys) -> None:
@@ -75,7 +77,7 @@ def test_bad_path_message(monkeypatch, capsys) -> None:
 
 def test_malformed_output_exit_code(monkeypatch, capsys) -> None:
     client = FakeClient(text_events("no structure here"))
-    monkeypatch.setattr(cli, "Fanoos", lambda model=None: Fanoos(client=client))
+    monkeypatch.setattr(cli, "Fanoos", lambda provider=None, model=None: Fanoos(client=client))
     monkeypatch.setattr(cli, "load_source", lambda target, fetch=True: PortfolioSource("url", target, ""))
     assert main(["review", "https://example.com", "--json"]) == 6
     assert "--raw" in capsys.readouterr().err
