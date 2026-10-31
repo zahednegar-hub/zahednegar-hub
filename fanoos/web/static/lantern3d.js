@@ -3,6 +3,8 @@
  *   import { mountLantern } from "/static/lantern3d.js";
  *   const lantern = mountLantern(containerEl, { reducedMotion });
  *   lantern.setScroll(0..1);   // drive the camera from page scroll
+ *   lantern.setMode("thinking" | "done" | "idle");   // react to the review state
+ *   lantern.setFraming(x, y);  // place the lantern beside the content
  *   lantern.dispose();
  *
  * Everything is procedural: brass frame, glass globe, a living flame (shader), embers, bloom.
@@ -356,7 +358,7 @@ export function mountLantern(container, { reducedMotion = false, quality: qualit
 
   // Chain up out of frame.
   const chainMat = new THREE.MeshStandardMaterial({ color: 0x5a4022, metalness: 1, roughness: 0.5, fog: false });
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 48; i++) { // long enough to leave the top of the frame
     const link = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.011, 8, 20), chainMat);
     link.position.y = 0.2 + i * 0.075;
     link.rotation.y = i % 2 ? Math.PI / 2 : 0;
@@ -404,6 +406,14 @@ export function mountLantern(container, { reducedMotion = false, quality: qualit
   const introDuration = reducedMotion ? 0 : 3.2;
   let readyFired = false;
   let introStart = -1;
+  // Review state: "thinking" makes the flame work harder; "done" flares once.
+  let mode = "idle";
+  let energy = 0;
+  let flare = 0;
+  let lastT = 0;
+  let flameTime = 0;
+  let emberTime = 0;
+  const framing = { x: 0, y: 0 };
 
   function resize() {
     const w = container.clientWidth || 1;
@@ -414,6 +424,8 @@ export function mountLantern(container, { reducedMotion = false, quality: qualit
     camera.aspect = w / h;
     // Keep the lantern framed on tall/narrow screens.
     camera.fov = w / h < 0.8 ? 42 : 32;
+    // Shift the lantern within the frame (e.g. beside the headline) without moving the camera.
+    camera.setViewOffset(w, h, -framing.x * w, -framing.y * h, w, h);
     camera.updateProjectionMatrix();
   }
 
@@ -422,13 +434,23 @@ export function mountLantern(container, { reducedMotion = false, quality: qualit
     const ti = t - introStart;
     const intro = introDuration ? clamp01(ti / introDuration) : 1;
     const ignite = introDuration ? easeOutCubic(clamp01((ti - 0.5) / 1.4)) : 1;
+    const rawDt = Math.max(0, t - lastT);
+    const dt = Math.min(0.1, rawDt); // capped for the flame/energy integrators
+    lastT = t;
+    energy += ((mode === "thinking" ? 1 : 0) - energy) * Math.min(1, dt * 2.5);
+    flare *= Math.exp(-dt * 2.2);
+    flameTime += dt * (1 + 0.9 * energy);
+    emberTime += dt * (1 + 2.4 * energy);
 
     // Camera: dolly out from a close, low shot; then parallax + scroll orbit.
-    pointer.x += (pointer.tx - pointer.x) * 0.05;
-    pointer.y += (pointer.ty - pointer.y) * 0.05;
-    smoothScroll += (scroll - smoothScroll) * 0.08;
+    // Time-based easing: the same feel at 30, 60 or 120 fps.
+    const ease = 1 - Math.exp(-Math.min(0.5, rawDt) * 3);
+    pointer.x += (pointer.tx - pointer.x) * ease;
+    pointer.y += (pointer.ty - pointer.y) * ease;
+    smoothScroll += (scroll - smoothScroll) * (1 - Math.exp(-Math.min(0.5, rawDt) * 5));
     const k = easeInOut(intro);
-    const dist = THREE.MathUtils.lerp(2.1, 6.4, k) + smoothScroll * 1.6;
+    const far = camera.aspect < 0.8 ? 10.5 : 8.2; // pull back on tall screens so the whole lantern fits
+    const dist = THREE.MathUtils.lerp(2.4, far, k) + smoothScroll * 1.8 - energy * 0.9;
     const orbit = pointer.x * 0.35 + smoothScroll * 0.9 + (1 - k) * -0.5;
     const height = THREE.MathUtils.lerp(0.35, 1.0, k) + pointer.y * 0.25 - smoothScroll * 0.4;
     camera.position.set(Math.sin(orbit) * dist, height, Math.cos(orbit) * dist);
@@ -441,16 +463,17 @@ export function mountLantern(container, { reducedMotion = false, quality: qualit
     lantern.group.rotation.y = reducedMotion ? 0.4 : t * 0.12;
 
     // Flame and light.
-    const f = reducedMotion ? 0.7 : flicker(t);
-    lantern.flameUniforms.uTime.value = t;
-    lantern.flameUniforms.uIgnite.value = ignite * (0.94 + 0.06 * f);
-    lantern.light.intensity = ignite * (5.2 + 2.4 * f);
-    lantern.halo.material.uniforms.uStrength.value = ignite * (0.18 + 0.1 * f);
+    const f = reducedMotion ? 0.7 : flicker(flameTime);
+    const boost = 1 + 0.4 * energy + 1.1 * flare;
+    lantern.flameUniforms.uTime.value = flameTime;
+    lantern.flameUniforms.uIgnite.value = ignite * (0.94 + 0.06 * f) * (1 + 0.2 * energy + 0.3 * flare);
+    lantern.light.intensity = ignite * (4 + 1.9 * f) * boost;
+    lantern.halo.material.uniforms.uStrength.value = ignite * (0.12 + 0.07 * f);
     bloom.strength = quality.bloom ? 0.3 + 0.4 * ignite : 0;
-    lantern.glow.material.opacity = ignite * (quality.bloom ? 0.35 : 0.6) * (0.85 + 0.15 * f);
+    lantern.glow.material.opacity = Math.min(1, ignite * (quality.bloom ? 0.35 : 0.6) * (0.85 + 0.15 * f) * boost);
     lantern.glow.scale.setScalar((quality.bloom ? 2.2 : 2.8) + 0.12 * f);
 
-    embers.material.uniforms.uTime.value = t;
+    embers.material.uniforms.uTime.value = emberTime;
     embers.material.uniforms.uFade.value = ignite;
 
     composer.render();
@@ -491,10 +514,12 @@ export function mountLantern(container, { reducedMotion = false, quality: qualit
   function start() {
     if (running || reducedMotion || !compiledReady || disposed) return;
     running = true;
+    container.dataset.state = "running";
     loop();
   }
   function stop() {
     running = false;
+    container.dataset.state = "paused";
     cancelAnimationFrame(raf);
   }
 
@@ -518,12 +543,16 @@ export function mountLantern(container, { reducedMotion = false, quality: qualit
   resize();
   if (reducedMotion) {
     introStart = 0;
+    container.dataset.state = "static";
     frame(10);
     container.classList.add("is-lit");
     onReady?.();
   } else {
     // Compile every shader before the first frame so the intro never stutters.
-    const compiled = renderer.compileAsync ? renderer.compileAsync(scene, camera) : Promise.resolve();
+    // compileAsync only helps (and only stays quiet) where parallel compilation is supported.
+    const parallel = renderer.extensions.has("KHR_parallel_shader_compile");
+    if (!parallel) renderer.compile(scene, camera);
+    const compiled = parallel ? renderer.compileAsync(scene, camera) : Promise.resolve();
     compiled
       .catch(() => {})
       .finally(() => {
@@ -535,6 +564,43 @@ export function mountLantern(container, { reducedMotion = false, quality: qualit
   return {
     setScroll(v) {
       scroll = clamp01(v);
+      if (reducedMotion) frame(10);
+    },
+    /** "idle" | "thinking" | "done" (a short flare, then idle). */
+    setMode(next) {
+      if (next === "done") {
+        flare = 1;
+        mode = "idle";
+      } else {
+        mode = next === "thinking" ? "thinking" : "idle";
+      }
+      container.dataset.mode = next;
+      if (reducedMotion) frame(10);
+    },
+    /** Read-only snapshot of the scene state, for automated UI checks. */
+    debug() {
+      return {
+        running,
+        reducedMotion,
+        mode,
+        energy: +energy.toFixed(3),
+        flare: +flare.toFixed(3),
+        scroll: +smoothScroll.toFixed(3),
+        pointer: { x: +pointer.x.toFixed(3), y: +pointer.y.toFixed(3) },
+        intro: introStart < 0 ? 0 : +clamp01((lastT - introStart) / (introDuration || 1)).toFixed(3),
+        ignited: introStart >= 0 && lastT - introStart > 1.9,
+        quality: { ...quality, shadowsOn: renderer.shadowMap.enabled, low: container.dataset.quality === "low" },
+        embers: quality.embers,
+        lightIntensity: +lantern.light.intensity.toFixed(2),
+        swayZ: +rig.rotation.z.toFixed(4),
+        framing: { ...framing },
+      };
+    },
+    /** Place the lantern in the frame: x/y are fractions of the width/height (+x right, +y down). */
+    setFraming(x = 0, y = 0) {
+      framing.x = x;
+      framing.y = y;
+      resize();
       if (reducedMotion) frame(10);
     },
     dispose() {

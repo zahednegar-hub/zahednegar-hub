@@ -1,36 +1,27 @@
 <div align="center">
 
-```
-          ▲
-         ╱█╲            F A N O O S
-        ▕███▏           فـانـوس
-        ╱▔▔▔╲
-       ▕  ✦  ▏          a lantern for designers' portfolios
-        ╲___╱
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-full.svg">
+  <img src="assets/logo-full-light.svg" alt="Fanoos · فانوس" width="360">
+</picture>
 
 **A bilingual (Persian / English) AI portfolio critic and career coach for UI/UX and web designers.**
 
 [![CI](https://github.com/zahednegar-hub/fanoos/actions/workflows/ci.yml/badge.svg)](https://github.com/zahednegar-hub/fanoos/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Version](https://img.shields.io/badge/version-0.1.0-f2a93b)
+![Version](https://img.shields.io/badge/version-0.2.0-d97706)
 
-[What it is](#what-it-is) · [Install](#install) · [Quickstart](#quickstart) · [CLI](#cli-reference) · [Roadmap](#roadmap) · [فارسی](#فارسی)
+[What it is](#what-it-is) · [Quickstart](#quickstart) · [Web UI](#web-ui) · [CLI](#cli-reference) · [n8n](#n8n) · [Roadmap](#roadmap) · [فارسی](#فارسی)
 
 </div>
 
-> **Banner concept.** A single amber lantern (`#f2a93b`) on a deep ink background, its light falling on a
-> portfolio grid. Left half Persian, right half English, meeting at the flame. The lantern lights the
-> path; it never walks it for you.
-
----
+<p align="center"><img src="docs/screenshots/web-en-desktop.png" alt="The Fanoos web app: a 3D lantern lights the review form" width="900"></p>
 
 ## What it is
 
-Fanoos (فانوس, *"lantern"*) is an AI agent that reviews a designer's portfolio the way an
-international art director would, then tells you exactly what to fix. Point it at a portfolio URL or
-PDF and it returns:
+Fanoos (فانوس, *"lantern"*) reviews a designer's portfolio the way an international art director
+would, then tells you exactly what to fix. Give it a portfolio URL or PDF and you get:
 
 - a **one-line Persian verdict**
 - **First Impression**: the 10-second recruiter test
@@ -40,67 +31,59 @@ PDF and it returns:
 - **Scores** from 0 to 100 on Narrative, Visual Craft, Case Study Depth, English Quality and
   International Readiness
 
-It ships as a CLI (`fanoos review …`) and as an importable Python library.
+It comes as a **web app**, a **CLI** (`fanoos review …`), a **Python library**, a **JSON API** and
+ready-made **n8n workflows**. The name means lantern: it lights the path; it never walks it for you.
 
 ## Why it exists
 
 Many Iranian and non-native-English designers are talented but lose international jobs,
 scholarships and remote clients on presentation: case studies without measurable impact, English
-that reads as translated, Persian pages with broken RTL. Good portfolio feedback from someone who
-has sat on both sides of the hiring table is rare and expensive.
-
-Fanoos packages that feedback. It reviews against international hiring standards (case study
-structure, visual hierarchy, typography, WCAG accessibility and RTL/LTR correctness), checks current
-trends with live web and X search before giving trend advice, and never criticises without a
-solution. It never invents metrics or clients for you, either.
+that reads as translated, Persian pages with broken RTL. Fanoos reviews against international hiring
+standards (case study structure, visual hierarchy, typography, WCAG accessibility, RTL/LTR
+correctness), checks current trends with live web and X search on xAI, and never criticises without
+a solution. It never invents metrics, clients or data either.
 
 ## Architecture
 
 ```
-                    fanoos review <url | pdf>
-                               │
-                               ▼
-  ┌────────────────────────────────────────────────────────────┐
-  │ cli.py        argparse · .env loading · rich rendering       │
-  └──────────────┬────────────────────────────────┬──────────────┘
-                 │                                │
-                 ▼                                ▼
-  ┌──────────────────────────┐      ┌──────────────────────────────┐
-  │ sources.py               │      │ agent.py  ·  Fanoos           │
-  │  URL → httpx → page text │─────▶│  system_prompt.py (verbatim)  │
-  │  PDF → pypdf → page text │      │  + output-format instructions │
-  └──────────────────────────┘      │  tools.py: web_search,x_search│
-                                    └───────────────┬───────────────┘
-                                                    │ streamed Responses API
-                                                    ▼
-                                  ┌───────────────────────────────────┐
-                                  │ xAI API  https://api.x.ai/v1       │
-                                  │ Grok runs the search tools itself  │
-                                  │ (server-side agent loop)           │
-                                  └───────────────┬───────────────────┘
-                                                  │ text deltas
-                                                  ▼
-  ┌────────────────────────────────────────────────────────────────┐
-  │ review.py   written review + ```json summary ──▶ Review          │
-  │             (falls back to reading Markdown sections)            │
-  └────────────────────────────────────────────────────────────────┘
-                                  │
-                ┌─────────────────┴────────────────┐
-                ▼                                  ▼
-       terminal report + scorecard          --json structured output
+   Browser (web/)          Terminal              n8n / any HTTP client
+   3D lantern + form       fanoos review …       POST /api/review
+          │                      │                       │
+          ▼                      │                       ▼
+  ┌───────────────────┐          │          ┌────────────────────────┐
+  │ server.py (FastAPI)│◀─────────┼──────────│ n8n/*.json workflows   │
+  │ /  /api/review     │          │          └────────────────────────┘
+  │ /health /api/providers        │
+  └─────────┬─────────┘          │
+            ▼                    ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │ fanoos/                                                       │
+  │  sources.py    URL → page text · PDF → text (pypdf)           │
+  │  agent.py      Fanoos: one system message = persona (verbatim) │
+  │                + output format (+ "no live search" if needed)  │
+  │  providers.py  xai · gemini · groq  (OpenAI-compatible)        │
+  │  tools.py      web_search + x_search (xAI only)                │
+  │  review.py     reply → Review (JSON summary, Markdown fallback)│
+  └──────────────────────────────┬───────────────────────────────┘
+                                 ▼
+        xAI Responses API + Agent Tools   │   Gemini / Groq Chat Completions
+        (live web and X search)           │   (model knowledge, «بدون جستجوی زنده»)
 ```
 
-| Module | Responsibility |
+| Path | Responsibility |
 |---|---|
-| `fanoos/system_prompt.py` | The validated persona, verbatim, plus the separate output-format instructions |
+| `fanoos/system_prompt.py` | The validated persona, verbatim; output-format and no-live-search instructions are appended separately |
 | `fanoos/agent.py` | `Fanoos` class: builds the request, streams the reply, maps API errors |
+| `fanoos/providers.py` | Provider registry and selection (`FANOOS_PROVIDER`, else the first key present) |
 | `fanoos/tools.py` | xAI Agent Tools config (`web_search`, `x_search`) |
 | `fanoos/review.py` | `Review` dataclass and the parser for the model's output |
 | `fanoos/sources.py` | Reads portfolio input from a URL or a PDF |
 | `fanoos/cli.py` | The `fanoos` command |
-| `fanoos/errors.py` | Typed errors with actionable messages and exit codes |
+| `fanoos/server.py` | FastAPI app: web UI, JSON API, upload limits, private-URL guard |
+| `web/` | The web UI: plain HTML/CSS/JS, no build step; Three.js lantern in `web/static/lantern3d.js` |
+| `n8n/` | Importable n8n workflows (webhook, optional Telegram bot) |
 
-## Install
+## Quickstart
 
 Requires Python 3.10+ on macOS, Linux or Windows.
 
@@ -112,151 +95,194 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
-Optional extras: `pip install -e ".[bidi]"` for `--bidi` (terminals without right-to-left support),
-and `pip install -e ".[dev]"` for tests and linting.
+Then set **one** provider key. Keys are read **only** from the environment (or a local `.env`,
+which is git-ignored); they are never hard-coded, stored or logged. Copy `.env.example` to `.env`
+to start.
 
-## Quickstart
+| Provider | Key | Get it | Live search | Cost |
+|---|---|---|---|---|
+| **xAI Grok** | `XAI_API_KEY` | [console.x.ai](https://console.x.ai) | Web + X | Paid |
+| **Google Gemini** | `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | No | Free tier |
+| **Groq** | `GROQ_API_KEY` | [console.groq.com/keys](https://console.groq.com/keys) | No | Free tier |
 
-1. Get an API key at [console.x.ai](https://console.x.ai).
-2. Put it in your environment. Fanoos reads the key **only** from `XAI_API_KEY`; it is never
-   hard-coded, stored or logged.
+**xAI** (recommended: live web and X search before trend advice)
 
-   ```bash
-   export XAI_API_KEY=xai-...        # Windows PowerShell: $env:XAI_API_KEY = "xai-..."
-   ```
+```bash
+export XAI_API_KEY=your_xai_key          # Windows PowerShell: $env:XAI_API_KEY = "your_xai_key"
+fanoos review https://your-portfolio.com
+```
 
-   Or copy `.env.example` to `.env` and fill it in (`.env` is git-ignored).
+**Gemini** (free)
 
-3. Review a portfolio:
+```bash
+export GEMINI_API_KEY=your_gemini_key
+fanoos review https://your-portfolio.com
+```
 
-   ```bash
-   fanoos review https://your-portfolio.com
-   fanoos review ~/Desktop/portfolio.pdf --lang en
-   fanoos review https://your-portfolio.com --json > review.json
-   ```
+**Groq** (free)
+
+```bash
+export GROQ_API_KEY=your_groq_key
+fanoos review https://your-portfolio.com
+```
+
+If several keys are set, Fanoos picks xAI, then Gemini, then Groq. Override with
+`FANOOS_PROVIDER=gemini` or `--provider gemini`. Run `fanoos providers` to see what is configured.
+
+> **About "free".** Gemini and Groq free tiers have per-minute and per-day request limits. They are
+> fine for trying Fanoos and for demos. For real clients or regular use, switch to xAI (which also
+> adds live search) or a paid plan. Default models: `grok-4-1-fast-reasoning`, `gemini-flash-latest`
+> and `openai/gpt-oss-120b`; override any of them with `FANOOS_MODEL` or `--model`.
 
 ### As a library
 
 ```python
 from fanoos import Fanoos, load_source
 
-agent = Fanoos()  # reads XAI_API_KEY
+agent = Fanoos()  # picks the provider from the environment
 review = agent.review(load_source("https://your-portfolio.com"), language="en")
 
 print(review.verdict)
 for issue in review.critical_issues:
     print(issue.issue, "→", issue.fix)
-print(review.scores, review.overall_score)
+print(review.scores, review.overall_score, review.provider, review.live_search)
 ```
 
 See [`examples/review_example.py`](examples/review_example.py) for a streaming example.
+
+## Web UI
+
+```bash
+uvicorn server:app --port 8000
+```
+
+Open <http://localhost:8000>. The page is Persian (RTL) by default with an English (LTR) toggle.
+
+- A **3D lantern** (Three.js, procedural, no external assets) stands beside the review form. Its
+  flame works harder while a review runs and flares when the report is ready; it follows the pointer
+  and the page scroll.
+- Paste a portfolio **URL** or upload a **PDF** (up to 15 MB), choose the report language, and the
+  report renders with animated score bars.
+- A **sample report** is built in, so the page is complete without any API key.
+- Accessibility: WCAG 2.1 AA (axe: 0 violations in Persian and English, desktop and mobile), keyboard
+  and screen-reader friendly, `prefers-reduced-motion` respected.
+- Performance: the 3D scene pauses off-screen and in hidden tabs, drops shadows, bloom and resolution
+  on weak GPUs, and falls back to a static mark without WebGL.
+
+| Persian, desktop | English, mobile | Report |
+|---|---|---|
+| <img src="docs/screenshots/web-fa-desktop.png" alt="Persian desktop" width="360"> | <img src="docs/screenshots/web-en-mobile.png" alt="English mobile" width="170"> | <img src="docs/screenshots/web-fa-report.png" alt="Report" width="300"> |
+
+### HTTP API
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Status, version and selected provider (never keys) |
+| `GET` | `/api/providers` | Which providers are configured |
+| `POST` | `/api/review` | JSON `{"url": "...", "lang": "fa"\|"en", "focus": "..."}`, or multipart with `url` or `file` (PDF) |
+
+Errors return JSON `{"error": "English\nPersian", "type": "..."}` with a matching status code
+(400 bad input, 413 file too large, 429 rate limit, 502 provider error, 503 no key configured).
+Interactive docs are at `/docs` while the server runs.
 
 ## CLI reference
 
 ```
 fanoos [--version] [--help]
+fanoos providers
 fanoos review <target> [options]
 ```
 
 | Option | Description |
 |---|---|
 | `target` | Portfolio URL (`https://…`) or path to a PDF |
-| `--lang {fa,en}` | Reply language. Default `fa` (Persian); the verdict is always Persian |
+| `--provider {xai,gemini,groq}` | AI provider (default: `$FANOOS_PROVIDER`, else the first configured) |
+| `--model ID` | Model ID (default: `$FANOOS_MODEL`, else the provider's default) |
+| `--lang {fa,en}` | Reply language. Default `fa`; the verdict is always Persian |
 | `--focus TEXT` | Extra request, e.g. `"Focus on the Venture Compass case study"` |
-| `--model ID` | Model ID. Default `$FANOOS_MODEL` or `grok-4-1-fast-reasoning` |
 | `--json` | Print only the structured review as JSON |
 | `--raw` | Print the model's reply unparsed |
 | `--no-stream` | Wait for the full reply, then render it as formatted Markdown |
 | `--no-fetch` | Don't pre-fetch the URL; let the model open it with web search |
-| `--bidi` | Reorder Persian text for terminals without RTL support (needs `[bidi]`) |
-
-| Environment variable | Purpose |
-|---|---|
-| `XAI_API_KEY` | **Required.** Your xAI API key |
-| `FANOOS_MODEL` | Optional default model |
+| `--bidi` | Reorder Persian text for terminals without RTL support (`pip install -e ".[bidi]"`) |
 
 **Exit codes:** `0` success · `2` missing or rejected API key · `3` network failure ·
 `4` rate limited (429) · `5` other API error · `6` malformed model output · `7` unreadable input.
 
-## Example output
+<details>
+<summary>Example terminal output</summary>
 
 ```
 $ fanoos review https://example-portfolio.com --lang en
-🏮 Fanoos is reading https://example-portfolio.com …
+🏮 Fanoos is reading https://example-portfolio.com (gemini · gemini-flash-latest) …
         پورتفولیوی قوی با روایت ضعیف؛ کیس‌استادی‌ها نتیجه‌ی قابل‌اندازه‌گیری ندارند.
-
 ## 1) First Impression
 Clean visual hierarchy, but the value proposition is unclear in the first 10 seconds…
 
-## 2) Critical Issues
-- No measurable impact in case studies → Add one outcome metric per project.
-…
-
-╭─────────────────────── Fanoos · فانوس scorecard ───────────────────────╮
-│  Narrative                ████████████░░░░░░░░  62/100                  │
-│  Visual Craft             █████████████████░░░  84/100                  │
-│  Case Study Depth         ███████████░░░░░░░░░  55/100                  │
-│  English Quality          ██████████████░░░░░░  70/100                  │
-│  International Readiness  █████████████░░░░░░░  66/100                  │
-│                                                                         │
-│  Overall                  █████████████░░░░░░░  67/100                  │
-│                                                                         │
-│  Next 3 Actions                                                         │
-│  1. Rewrite Venture Compass case study                                  │
-│  2. Fix RTL icons                                                       │
-│  3. Polish English bio                                                  │
-╰─────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────── Fanoos · فانوس scorecard ────────────────────────╮
+│  Narrative                ████████████░░░░░░░░  62/100                     │
+│  Visual Craft             █████████████████░░░  84/100                     │
+│  Case Study Depth         ███████████░░░░░░░░░  55/100                     │
+│  English Quality          ██████████████░░░░░░  70/100                     │
+│  International Readiness  █████████████░░░░░░░  66/100                     │
+│  Overall                  █████████████░░░░░░░  67/100                     │
+│                                                    بدون جستجوی زنده        │
+╰──────────────────────────── gemini · gemini-flash-latest ─────────────────╯
 ```
 
-<details>
-<summary><code>--json</code> output</summary>
-
-```json
-{
-  "verdict": "پورتفولیوی قوی با روایت ضعیف؛ کیس‌استادی‌ها نتیجه‌ی قابل‌اندازه‌گیری ندارند.",
-  "first_impression": "Clean visual hierarchy, but the value proposition is unclear in the first 10 seconds.",
-  "critical_issues": [
-    { "issue": "No measurable impact in case studies", "fix": "Add one outcome metric per project." }
-  ],
-  "quick_wins": ["Add alt text to hero images", "Shorten the About headline"],
-  "next_actions": ["Rewrite Venture Compass case study", "Fix RTL icons", "Polish English bio"],
-  "scores": {
-    "narrative": 62, "visual_craft": 84, "case_study_depth": 55,
-    "english_quality": 70, "international_readiness": 66
-  },
-  "overall_score": 67
-}
-```
-
+*Illustrative output, not a review of a real portfolio.*
 </details>
 
-*The sample above is illustrative, not a review of a real portfolio.*
+## n8n
+
+Two ready-to-import workflows live in [`n8n/`](n8n/):
+
+- `fanoos-workflow.json`: **Webhook** `POST /fanoos-review` → Fanoos `/api/review` → **Respond to
+  Webhook**, passing status codes through.
+- `fanoos-telegram-workflow.optional.json`: a Telegram bot that replies to any portfolio link with
+  a short Persian review.
+
+Both were tested on n8n 2.45 (import, publish, end-to-end run). Step-by-step guide:
+[`docs/n8n.md`](docs/n8n.md).
+
+## Security
+
+- API keys are read only from environment variables (or a local, git-ignored `.env`), never logged,
+  never returned by the API, and never shown in the UI.
+- Uploaded PDFs are limited to 15 MB and must start with `%PDF`; they are processed in a temporary
+  directory and deleted.
+- The server refuses loopback, private and link-local URLs, so it cannot be used to probe your
+  network (set `FANOOS_ALLOW_PRIVATE_URLS=1` to allow them for local testing).
+- Model output is rendered as text only (no `innerHTML`), so a review cannot inject markup.
+- Before publishing, scan for key prefixes with `grep -rE "xa[i]-|AI[z]a|gs[k]_" .` (the brackets
+  stop the command from matching itself). It finds nothing in this repository.
 
 ## Roadmap
 
 - [x] **v0.1**: CLI and library, URL and PDF input, streamed bilingual report, structured JSON
-- [ ] **v0.2**: `fanoos polish` for before/after English rewrites of bios and case studies
-- [ ] **v0.3**: follow-up re-reviews that compare against a saved previous review
-- [ ] **v0.4**: screenshot input, so the model can judge visuals directly
-- [ ] **v1.0**: React web interface on the same core, with accounts and payments
+- [x] **v0.2**: brand, xAI/Gemini/Groq providers, web UI with 3D lantern, HTTP API, n8n workflows
+- [ ] **v0.3**: `fanoos polish` for before/after English rewrites of bios and case studies
+- [ ] **v0.4**: follow-up re-reviews that compare against a saved previous review
+- [ ] **v0.5**: screenshot input, so the model can judge visuals directly
+- [ ] **v1.0**: accounts, saved reports and payments on the same core
 
 ## Contributing
 
-Issues and pull requests are welcome.
-
 ```bash
 pip install -e ".[dev,bidi]"
-pytest          # all tests are offline; the API is mocked
+pytest          # all tests are offline; every provider is mocked
 ruff check .
 ```
 
-Please keep the persona in `fanoos/system_prompt.py` verbatim. Behaviour changes belong in the
-output-format instructions or in code. Use [Conventional Commits](https://www.conventionalcommits.org/)
-(`feat:`, `fix:`, `docs:` …) and add a line to `CHANGELOG.md`.
+Keep the persona in `fanoos/system_prompt.py` verbatim; behaviour changes belong in the appended
+instructions or in code. Use [Conventional Commits](https://www.conventionalcommits.org/) and add a
+line to `CHANGELOG.md`. The logo is generated by `tools/build_logo.py`.
 
-## License
+## Credits and license
 
-[MIT](LICENSE) © 2026 Negar Zahed
+[MIT](LICENSE) © 2026 Negar Zahed. Bundled third-party assets: [Three.js](https://threejs.org) (MIT,
+`web/static/vendor/three/LICENSE`), [Inter](https://rsms.me/inter/) and
+[Vazirmatn](https://github.com/rastikerdar/vazirmatn) (SIL OFL 1.1, `web/static/fonts/`).
 
 ---
 
@@ -264,32 +290,14 @@ output-format instructions or in code. Use [Conventional Commits](https://www.co
 
 ## فارسی
 
-### فانوس چیست؟
+**فانوس** یک منتقد دوزبانه‌ی هوش مصنوعی برای پورتفولیوی طراحان UI/UX و وب است. لینک یا PDF پورتفولیو را
+می‌دهی و این‌ها را می‌گیری: یک جمله حکم فارسی، تست ۱۰ ثانیه‌ای ریکروتر، مشکلات حیاتی با راه‌حل، اصلاحات زیر
+یک ساعت، سه قدم بعدی و امتیاز ۰ تا ۱۰۰ در پنج معیار. اسمش یعنی فانوس: مسیر را روشن می‌کند، اما به جای تو
+راه نمی‌رود.
 
-**فانوس** یک دستیار هوش مصنوعی دوزبانه (فارسی/انگلیسی) است که پورتفولیوی طراحان UI/UX و وب را مثل
-یک art director بین‌المللی نقد می‌کند و دقیقاً می‌گوید چه چیزی را چطور درست کنید. اسمش یعنی فانوس:
-مسیر را روشن می‌کند، اما به جای شما راه نمی‌رود.
+### شروع سریع
 
-یک لینک یا فایل PDF پورتفولیو بدهید و این‌ها را بگیرید:
-
-- **یک جمله حکم کلی به فارسی**
-- **First Impression**: تست ۱۰ ثانیه‌ای ریکروتر
-- **Critical Issues**: مشکلات اساسی، هرکدام با راه‌حل
-- **Quick Wins**: اصلاحاتی که کمتر از یک ساعت وقت می‌برند
-- **Next 3 Actions**: سه قدم بعدی به ترتیب اولویت
-- **امتیاز ۰ تا ۱۰۰** در پنج معیار: Narrative، Visual Craft، Case Study Depth، English Quality و International Readiness
-
-### چرا ساخته شد؟
-
-خیلی از طراحان ایرانی و غیرانگلیسی‌زبان مهارت دارند، اما فرصت‌های کاری بین‌المللی، بورسیه و کارفرمای
-ریموت را به خاطر ارائه از دست می‌دهند: کیس‌استادی بدون نتیجه‌ی قابل‌اندازه‌گیری، انگلیسی‌ای که بوی
-ترجمه می‌دهد، یا صفحه‌های فارسی با RTL خراب. فانوس با استانداردهای استخدام بین‌المللی نقد می‌کند،
-قبل از توصیه درباره‌ی ترندها با جست‌وجوی زنده در وب و X آن‌ها را بررسی می‌کند، هیچ نقدی را بدون
-راه‌حل نمی‌گوید و هرگز عدد، مشتری یا داده‌ی جعلی برای پورتفولیوی شما نمی‌سازد.
-
-### نصب
-
-به Python نسخه‌ی 3.10 یا بالاتر نیاز دارید (macOS، Linux یا Windows).
+۱. پایتون ۳.۱۰ یا بالاتر لازم است (macOS، Linux یا Windows). پروژه را نصب کن:
 
 </div>
 
@@ -303,51 +311,51 @@ pip install -e .
 
 <div dir="rtl">
 
-### شروع سریع
+۲. **یکی** از این کلیدها را تنظیم کن. کلید فقط از متغیر محیطی (یا فایل ‎.env‎ که در گیت ثبت نمی‌شود) خوانده
+می‌شود و هیچ‌جا ذخیره یا نمایش داده نمی‌شود.
 
-۱. از [console.x.ai](https://console.x.ai) کلید API بگیرید.
+| ارائه‌دهنده | متغیر | جستجوی زنده | هزینه |
+|---|---|---|---|
+| xAI Grok | `XAI_API_KEY` | وب و X | پولی |
+| Google Gemini | `GEMINI_API_KEY` | ندارد | رایگان (با سهمیه) |
+| Groq | `GROQ_API_KEY` | ندارد | رایگان (با سهمیه) |
 
-۲. کلید را فقط در متغیر محیطی `XAI_API_KEY` بگذارید. فانوس کلید را هیچ‌جا ذخیره یا چاپ نمی‌کند.
-می‌توانید فایل `.env.example` را به `.env` کپی کنید و کلید را آنجا بنویسید (فایل `.env` در گیت ثبت نمی‌شود).
-
-۳. پورتفولیو را بررسی کنید:
+کلید رایگان Gemini را از [aistudio.google.com/apikey](https://aistudio.google.com/apikey) بگیر:
 
 </div>
 
 ```bash
-export XAI_API_KEY=xai-...
+export GEMINI_API_KEY=your_gemini_key
+fanoos providers
 fanoos review https://your-portfolio.com
-fanoos review portfolio.pdf --lang en
-fanoos review https://your-portfolio.com --json
 ```
 
 <div dir="rtl">
 
-### گزینه‌های مهم
+۳. رابط وب را اجرا کن و <span dir="ltr">http://localhost:8000</span> را باز کن:
 
-| گزینه | توضیح |
-|---|---|
-| `--lang fa` یا `--lang en` | زبان پاسخ (پیش‌فرض فارسی؛ حکم اول همیشه فارسی است) |
-| `--focus "..."` | درخواست اضافه، مثلاً تمرکز روی یک کیس‌استادی |
-| `--json` | فقط خروجی ساختاریافته به صورت JSON |
-| `--no-stream` | صبر تا پایان پاسخ و نمایش قالب‌بندی‌شده |
-| `--bidi` | برای ترمینال‌هایی که متن راست‌به‌چپ را درست نشان نمی‌دهند (مثل کنسول قدیمی ویندوز) |
-| `--model` | تغییر مدل (پیش‌فرض `grok-4-1-fast-reasoning`) |
+</div>
 
-### نقشه‌ی راه
+```bash
+uvicorn server:app --port 8000
+```
 
-- **نسخه‌ی ۰٫۱**: ابزار خط فرمان و کتابخانه، ورودی لینک و PDF، گزارش دوزبانه و JSON
-- **نسخه‌ی ۰٫۲**: دستور `fanoos polish` برای بازنویسی انگلیسی بیو و کیس‌استادی با نسخه‌ی قبل و بعد
-- **نسخه‌ی ۰٫۳**: بازبینی دوباره و مقایسه با نقد قبلی
-- **نسخه‌ی ۱٫۰**: رابط وب با React روی همین هسته، همراه با حساب کاربری و پرداخت
+<div dir="rtl">
 
-### مشارکت
+### نکته‌ی صادقانه درباره‌ی «رایگان»
 
-پیشنهاد و Pull Request با کمال میل پذیرفته می‌شود. همه‌ی تست‌ها آفلاین هستند و با `pytest` اجرا می‌شوند.
-لطفاً متن شخصیت فانوس در `fanoos/system_prompt.py` را دست‌نخورده نگه دارید.
+کلیدهای رایگان Gemini و Groq سقف درخواست روزانه و دقیقه‌ای دارند. برای امتحان و دمو کاملاً کافی است، اما
+برای مشتری واقعی یا استفاده‌ی منظم باید به xAI (که جستجوی زنده هم دارد) یا یک پلن پولی بروی. روی Gemini و
+Groq، گزارش با «بدون جستجوی زنده» مشخص می‌شود.
+
+### n8n و تلگرام
+
+دو workflow آماده در پوشه‌ی `n8n/` هست: یک webhook که گزارش را به صورت JSON برمی‌گرداند، و یک ربات تلگرام
+اختیاری که به هر لینک پورتفولیو یک گزارش کوتاه فارسی جواب می‌دهد. راهنمای قدم‌به‌قدم:
+[`docs/n8n.md`](docs/n8n.md)
 
 ### مجوز
 
-این پروژه با مجوز [MIT](LICENSE) منتشر شده است.
+این پروژه با مجوز [MIT](LICENSE) منتشر شده است. ساخته شده با ♥ توسط نگار زاهد.
 
 </div>

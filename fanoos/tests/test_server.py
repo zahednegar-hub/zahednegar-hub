@@ -55,8 +55,29 @@ def test_index_and_assets(api: TestClient) -> None:
     page = api.get("/")
     assert page.status_code == 200 and 'lang="fa" dir="rtl"' in page.text
     assert "/assets/logo-full.svg" in page.text and "/assets/favicon.svg" in page.text
-    for path in ("/static/styles.css", "/static/app.js", "/assets/logo-full.svg", "/favicon.ico"):
+    for path in (
+        "/static/styles.css",
+        "/static/app.js",
+        "/static/lantern3d.js",
+        "/static/vendor/three/three.module.min.js",
+        "/static/vendor/three/addons/postprocessing/EffectComposer.js",
+        "/static/vendor/three/addons/postprocessing/UnrealBloomPass.js",
+        "/static/vendor/three/addons/environments/RoomEnvironment.js",
+        "/static/fonts/inter-latin-wght-normal.woff2",
+        "/static/fonts/vazirmatn-arabic-400-normal.woff2",
+        "/assets/logo-full.svg",
+        "/favicon.ico",
+    ):
         assert api.get(path).status_code == 200, path
+
+
+def test_page_wires_the_lantern(api: TestClient) -> None:
+    page = api.get("/").text
+    assert '"three": "/static/vendor/three/three.module.min.js"' in page  # import map
+    assert 'id="lantern-stage"' in page and "hero-fallback" in page  # 3D stage + no-WebGL fallback
+    app = api.get("/static/app.js").text
+    assert 'import("/static/lantern3d.js")' in app and "setMode(" in app and "setScroll(" in app
+    assert ".innerHTML" not in app and "insertAdjacentHTML" not in app  # model output is inserted as text only
 
 
 def test_health_without_keys(api: TestClient) -> None:
