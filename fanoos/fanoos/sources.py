@@ -13,14 +13,12 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Literal
 
-import httpx
-
 from .errors import NetworkError, SourceError
 
 MAX_CHARS: int = 60_000
 """Upper bound on extracted text sent to the model, to keep requests affordable."""
 
-USER_AGENT: str = "Fanoos/0.1 (+https://github.com/zahednegar-hub/fanoos)"
+USER_AGENT: str = "Fanoos/0.3 (+https://github.com/zahednegar-hub/fanoos)"
 
 
 @dataclass(frozen=True)
@@ -45,13 +43,16 @@ def is_url(target: str) -> bool:
     return bool(re.match(r"^https?://", target.strip(), re.I))
 
 
-def load_source(target: str, *, timeout: float = 20.0, fetch: bool = True) -> PortfolioSource:
+def load_source(
+    target: str, *, timeout: float = 20.0, fetch: bool = True, allow_private: bool = True
+) -> PortfolioSource:
     """Turn a CLI target (URL or PDF path) into a :class:`PortfolioSource`.
 
     Args:
         target: An ``http(s)://`` URL or a path to a ``.pdf`` file.
         timeout: Seconds to wait when fetching a URL.
         fetch: If ``False``, do not download URLs (the model browses them itself).
+        allow_private: Allow loopback/private URLs (CLI default); the web server passes ``False``.
 
     Returns:
         The loaded source.
@@ -64,7 +65,7 @@ def load_source(target: str, *, timeout: float = 20.0, fetch: bool = True) -> Po
         if not fetch:
             return PortfolioSource("url", target, "", "Page was not pre-fetched; open it with web_search.")
         try:
-            return PortfolioSource("url", target, fetch_page_text(target, timeout=timeout))
+            return PortfolioSource("url", target, fetch_page_text(target, timeout=timeout, allow_private=allow_private))
         except NetworkError as exc:
             return PortfolioSource("url", target, "", f"Could not fetch the page directly ({exc}).")
 
@@ -171,27 +172,29 @@ def html_to_text(html: str) -> str:
     return f"Title: {title}\n\n{text}" if title else text
 
 
-def fetch_page_text(url: str, *, timeout: float = 20.0) -> str:
-    """Download ``url`` and return its visible text.
+def fetch_page_text(url: str, *, timeout: float = 20.0, allow_private: bool = True) -> str:
+    """Download ``url`` (with SSRF protection unless ``allow_private``) and return its visible text.
 
     Args:
         url: The page to fetch.
-        timeout: Seconds to wait.
+        timeout: Seconds to wait per request.
+        allow_private: Allow loopback/private targets. The CLI allows them (it runs on your own
+            machine); the web server never does.
 
     Returns:
         Extracted text truncated to :data:`MAX_CHARS`.
 
     Raises:
+        BlockedURLError: The URL or a redirect points at a non-public address.
         NetworkError: On connection failures, timeouts, or HTTP error statuses.
+        SourceError: The response is not a web page or is too large.
     """
-    try:
-        response = httpx.get(url, timeout=timeout, follow_redirects=True, headers={"User-Agent": USER_AGENT})
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise NetworkError(f"{url} answered HTTP {exc.response.status_code}") from exc
-    except httpx.HTTPError as exc:
-        raise NetworkError(f"could not reach {url}: {exc.__class__.__name__}") from exc
-    return html_to_text(response.text)[:MAX_CHARS]
+    from .netguard import safe_fetch
+
+    result = safe_fetch(url, timeout=timeout, allow_private=allow_private, user_agent=USER_AGENT)
+    if result.content_type == "text/plain":
+        return result.text[:MAX_CHARS]
+    return html_to_text(result.text)[:MAX_CHARS]
 
 
 __all__ = ["PortfolioSource", "MAX_CHARS", "is_url", "load_source", "read_pdf_text", "html_to_text", "fetch_page_text"]

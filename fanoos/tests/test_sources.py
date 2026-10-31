@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import httpx
 import pytest
 
-from fanoos import sources
 from fanoos.errors import SourceError
 from fanoos.sources import html_to_text, is_url, load_source
 
@@ -27,20 +25,30 @@ def test_html_to_text_strips_scripts_and_keeps_alt() -> None:
 
 
 def test_url_is_fetched(monkeypatch) -> None:
-    monkeypatch.setattr(
-        sources.httpx, "get", lambda url, **kw: httpx.Response(200, text=HTML, request=httpx.Request("GET", url))
-    )
+    from fanoos import netguard
+
+    monkeypatch.setattr(netguard, "safe_fetch", lambda url, **kw: netguard.FetchResult(url, "text/html", HTML))
     source = load_source("https://example.com")
     assert source.kind == "url" and "Case Studies" in source.text
 
 
 def test_url_fetch_failure_falls_back_to_browsing(monkeypatch) -> None:
-    def boom(url, **kw):
-        raise httpx.ConnectError("offline")
+    from fanoos import netguard
+    from fanoos.errors import NetworkError
 
-    monkeypatch.setattr(sources.httpx, "get", boom)
+    def boom(url, **kw):
+        raise NetworkError("offline")
+
+    monkeypatch.setattr(netguard, "safe_fetch", boom)
     source = load_source("https://example.com")
     assert source.text == "" and "Could not fetch" in source.note
+
+
+def test_blocked_url_is_not_silently_passed_to_the_model(monkeypatch) -> None:
+    from fanoos.netguard import BlockedURLError
+
+    with pytest.raises(BlockedURLError):
+        load_source("http://127.0.0.1:8000/admin", allow_private=False)
 
 
 def test_no_fetch() -> None:

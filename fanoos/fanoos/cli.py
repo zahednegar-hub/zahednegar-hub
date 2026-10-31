@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections.abc import Sequence
-from pathlib import Path
 from typing import TextIO
 
 from rich.console import Console, Group
@@ -18,9 +16,10 @@ from rich.text import Text
 
 from . import __version__
 from .agent import Fanoos
-from .errors import FanoosError
+from .errors import FanoosError, redact
 from .providers import PROVIDERS, preferred_provider_name
 from .review import SCORE_KEYS, SCORE_LABELS, Review, contains_persian
+from .settings import load_dotenv
 from .sources import load_source
 from .system_prompt import NO_LIVE_SEARCH_FOOTER
 
@@ -29,27 +28,6 @@ _JSON_FENCE = "```json"
 
 
 # --- environment ----------------------------------------------------------------
-
-
-def load_dotenv(path: Path | None = None) -> None:
-    """Load ``KEY=value`` lines from a ``.env`` file without overriding the real environment.
-
-    Only the current directory's ``.env`` is read. Values are never printed.
-
-    Args:
-        path: File to read; defaults to ``./.env``.
-    """
-    path = path or Path.cwd() / ".env"
-    if not path.is_file():
-        return
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.removeprefix("export ").split("=", 1)
-        key, value = key.strip(), value.strip().strip("'\"")
-        if key and key not in os.environ:
-            os.environ[key] = value
 
 
 def _force_utf8(stream: TextIO) -> None:
@@ -322,7 +300,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         return cmd_review(args, out, err)
     except FanoosError as exc:
-        err.print(Text("error: ", style="bold red") + Text(str(exc)))
+        err.print(Text("error: ", style="bold red") + Text(redact(str(exc))))
         return exc.exit_code
     except KeyboardInterrupt:
         err.print("\n[grey50]Cancelled.[/]")

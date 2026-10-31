@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fanoos"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fanoos (فانوس): a bilingual Persian/English AI portfolio critic and career coach for UI/UX and web designers."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,7 +37,8 @@ dependencies = [
 
 [project.optional-dependencies]
 bidi = ["python-bidi>=0.4"]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6"]
+cpanel = ["a2wsgi>=1.10"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "a2wsgi>=1.10"]
 
 [project.scripts]
 fanoos = "fanoos.cli:main"

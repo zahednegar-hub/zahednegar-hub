@@ -7,10 +7,30 @@ went wrong *and* what to do about it.
 
 from __future__ import annotations
 
+import os
+import re
+
 
 def bilingual(en: str, fa: str) -> str:
     """Join an English and a Persian message on separate lines."""
     return f"{en}\n{fa}"
+
+
+_KEY_ENV_VARS = ("XAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY")
+_KEY_PATTERNS = re.compile(r"(xai-[A-Za-z0-9]{8,}|AIza[0-9A-Za-z_\-]{20,}|gsk_[A-Za-z0-9]{10,}|sk-[A-Za-z0-9_\-]{16,})")
+
+
+def redact(text: str) -> str:
+    """Remove API keys from ``text``: the configured key values and anything shaped like a key.
+
+    Used on every error message before it is shown or logged, so a provider that echoes a
+    key back can never leak it.
+    """
+    for var in _KEY_ENV_VARS:
+        value = os.environ.get(var, "").strip()
+        if len(value) >= 8:
+            text = text.replace(value, "[redacted]")
+    return _KEY_PATTERNS.sub("[redacted]", text)
 
 
 class FanoosError(Exception):
@@ -129,6 +149,7 @@ class SourceError(FanoosError):
 
 __all__ = [
     "bilingual",
+    "redact",
     "FanoosError",
     "MissingAPIKeyError",
     "UnknownProviderError",

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 from fastapi.testclient import TestClient
 
-from fanoos import server
+from fanoos import __version__, server
 from fanoos.agent import Fanoos
+from fanoos.settings import Settings, load_settings
 from fanoos.sources import PortfolioSource
 from fanoos.system_prompt import NO_LIVE_SEARCH_FOOTER
 
@@ -36,19 +39,40 @@ def make_pdf(text: str) -> bytes:
     return bytes(out)
 
 
-@pytest.fixture
-def fake(sample_reply: str):
-    client = FakeClient(chat_chunks(sample_reply))
-    server.app.dependency_overrides[server.default_agent_factory] = lambda: (
-        lambda provider, model: Fanoos(provider=provider or "gemini", model=model, client=client)
-    )
-    yield client
-    server.app.dependency_overrides.clear()
+def settings(**overrides) -> Settings:
+    base = dataclasses.replace(load_settings(), rate_limit=(0, 0), env="production")
+    return dataclasses.replace(base, **overrides)
 
 
 @pytest.fixture
-def api() -> TestClient:
-    return TestClient(server.app)
+def app_factory(sample_reply: str):
+    """Build a fresh app (own settings, own limiter) whose agent uses a fake client."""
+    made = []
+
+    def make(reply: str = sample_reply, **overrides):
+        app = server.create_app(settings(**overrides))
+        client = FakeClient(chat_chunks(reply))
+        app.dependency_overrides[server.default_agent_factory] = lambda: (
+            lambda provider, model: Fanoos(provider=provider or "gemini", model=model, client=client)
+        )
+        app.state.fake = client
+        made.append(app)
+        return app
+
+    return make
+
+
+@pytest.fixture
+def fake(app_factory, monkeypatch):
+    app = app_factory()
+    monkeypatch.setattr(server, "check_url", lambda url, allow_private=False: None)  # no DNS in tests
+    return app
+
+
+@pytest.fixture
+def api(request) -> TestClient:
+    app = request.getfixturevalue("fake") if "fake" in request.fixturenames else server.create_app(settings())
+    return TestClient(app)
 
 
 def test_index_and_assets(api: TestClient) -> None:
@@ -81,7 +105,7 @@ def test_page_wires_the_lantern(api: TestClient) -> None:
 
 
 def test_health_without_keys(api: TestClient) -> None:
-    assert api.get("/health").json() == {"status": "ok", "version": "0.2.0", "provider": None, "live_search": None}
+    assert api.get("/health").json() == {"status": "ok", "version": __version__, "provider": None, "live_search": None}
 
 
 def test_health_and_providers_with_key(api: TestClient, monkeypatch) -> None:
@@ -93,53 +117,57 @@ def test_health_and_providers_with_key(api: TestClient, monkeypatch) -> None:
     assert "test-key" not in str(data)
 
 
-def test_review_json_url(api: TestClient, fake: FakeClient, monkeypatch) -> None:
-    monkeypatch.setattr(server, "_private_host", lambda url: False)
-    monkeypatch.setattr(server, "load_source", lambda target: PortfolioSource("url", target, "Case studies"))
+def test_review_json_url(api: TestClient, fake, monkeypatch) -> None:
+    monkeypatch.setattr(server, "load_source", lambda target, allow_private=False: PortfolioSource("url", target, "x"))
     res = api.post("/api/review", json={"url": "https://example.com", "lang": "en"})
     assert res.status_code == 200, res.text
     data = res.json()
     assert data["scores"]["visual_craft"] == 84 and data["overall_score"] == 67
     assert data["provider"] == "gemini" and data["live_search"] is False
     assert data["report"].endswith(NO_LIVE_SEARCH_FOOTER)
-    assert "English" in fake.responses.calls[0]["messages"][1]["content"]
+    assert "English" in fake.state.fake.responses.calls[0]["messages"][1]["content"]
 
 
-def test_review_form_pdf_upload(api: TestClient, fake: FakeClient) -> None:
+def test_review_form_pdf_upload(api: TestClient, fake) -> None:
     pdf = make_pdf("Senior Product Designer case study")
-    res = api.post("/api/review", data={"lang": "fa"}, files={"file": ("folio.pdf", pdf, "application/pdf")})
+    res = api.post("/api/review", data={"lang": "fa"}, files={"file": ("my folio.pdf", pdf, "application/pdf")})
     assert res.status_code == 200, res.text
-    user = fake.responses.calls[0]["messages"][1]["content"]
-    assert "Senior Product Designer case study" in user and "Portfolio PDF" in user
+    user = fake.state.fake.responses.calls[0]["messages"][1]["content"]
+    assert "Senior Product Designer case study" in user and "Portfolio PDF: my folio.pdf" in user
+    assert "/tmp" not in user and "fanoos-" not in user  # no server paths reach the model
 
 
-def test_missing_input(api: TestClient, fake: FakeClient) -> None:
+def test_missing_input(api: TestClient, fake) -> None:
     res = api.post("/api/review", data={"lang": "fa"})
     assert res.status_code == 400 and res.json()["type"] == "SourceError"
 
 
-def test_bad_url_and_lang(api: TestClient, fake: FakeClient) -> None:
+def test_bad_url_and_lang(api: TestClient, fake) -> None:
     assert api.post("/api/review", json={"url": "ftp://x"}).status_code == 400
     assert api.post("/api/review", json={"url": "https://example.com", "lang": "de"}).status_code == 400
 
 
-def test_private_url_refused(api: TestClient, fake: FakeClient) -> None:
-    res = api.post("/api/review", json={"url": "http://127.0.0.1:8000/admin"})
-    assert res.status_code == 400 and "local" in res.json()["error"]
+def test_private_url_refused() -> None:
+    api = TestClient(server.create_app(settings()))
+    for url in ("http://127.0.0.1:8000/admin", "http://169.254.169.254/latest/meta-data/", "http://[::1]/"):
+        res = api.post("/api/review", json={"url": url})
+        assert res.status_code == 400 and res.json()["type"] == "BlockedURLError", url
 
 
-def test_non_pdf_upload(api: TestClient, fake: FakeClient) -> None:
+def test_non_pdf_upload(api: TestClient, fake) -> None:
     res = api.post("/api/review", files={"file": ("cv.docx", b"PK\x03\x04", "application/octet-stream")})
     assert res.status_code == 400 and "PDF" in res.json()["error"]
 
 
-def test_too_large_upload(api: TestClient, fake: FakeClient, monkeypatch) -> None:
-    monkeypatch.setattr(server, "MAX_UPLOAD_BYTES", 10)
-    res = api.post("/api/review", files={"file": ("big.pdf", b"%PDF-" + b"x" * 50, "application/pdf")})
+def test_too_large_upload(app_factory) -> None:
+    api = TestClient(app_factory(max_upload_bytes=1024))
+    res = api.post("/api/review", files={"file": ("big.pdf", b"%PDF-" + b"x" * 5000, "application/pdf")})
     assert res.status_code == 413
+    huge = api.post("/api/review", content=b"x" * 200_000, headers={"content-type": "application/json"})
+    assert huge.status_code == 413  # rejected by the streaming body limit
 
 
-def test_invalid_json(api: TestClient, fake: FakeClient) -> None:
+def test_invalid_json(api: TestClient, fake) -> None:
     res = api.post("/api/review", content=b"{nope", headers={"content-type": "application/json"})
     assert res.status_code == 400
 
@@ -151,22 +179,99 @@ def test_missing_key_is_bilingual_503(api: TestClient) -> None:
     assert body["type"] == "MissingAPIKeyError" and "GEMINI_API_KEY" in body["error"] and "کلید" in body["error"]
 
 
-def test_malformed_output_502(api: TestClient, monkeypatch) -> None:
-    client = FakeClient(chat_chunks("nothing structured here"))
-    server.app.dependency_overrides[server.default_agent_factory] = lambda: (
-        lambda provider, model: Fanoos(provider="groq", client=client)
-    )
-    monkeypatch.setattr(server, "_private_host", lambda url: False)
-    monkeypatch.setattr(server, "load_source", lambda target: PortfolioSource("url", target, ""))
-    try:
-        res = api.post("/api/review", json={"url": "https://example.com"})
-    finally:
-        server.app.dependency_overrides.clear()
+def test_malformed_output_502(app_factory, monkeypatch) -> None:
+    monkeypatch.setattr(server, "check_url", lambda url, allow_private=False: None)
+    monkeypatch.setattr(server, "load_source", lambda target, allow_private=False: PortfolioSource("url", target, ""))
+    api = TestClient(app_factory(reply="nothing structured here"))
+    res = api.post("/api/review", json={"url": "https://example.com"})
     assert res.status_code == 502 and res.json()["type"] == "MalformedOutputError"
 
 
-def test_private_host_detection() -> None:
-    assert server._private_host("http://127.0.0.1/")
-    assert server._private_host("http://localhost:8000/")
-    assert server._private_host("http://10.0.0.5/")
-    assert not server._private_host("http://no-such-host.invalid/")
+def test_security_headers_and_csp_hash(api: TestClient) -> None:
+    import base64
+    import hashlib
+    import re
+
+    res = api.get("/")
+    csp = res.headers["content-security-policy"]
+    importmap = re.search(r'<script type="importmap">(.*?)</script>', res.text, re.S).group(1)
+    digest = base64.b64encode(hashlib.sha256(importmap.encode()).digest()).decode()
+    assert f"'sha256-{digest}'" in csp and "'unsafe-inline'" not in csp.split("script-src", 1)[1].split(";")[0]
+    assert "frame-ancestors 'none'" in csp and "object-src 'none'" in csp
+    assert res.headers["x-content-type-options"] == "nosniff" and res.headers["x-frame-options"] == "DENY"
+    assert "strict-transport-security" not in res.headers  # only over HTTPS
+    assert "access-control-allow-origin" not in res.headers  # no CORS
+
+
+def test_hsts_over_https() -> None:
+    api = TestClient(server.create_app(settings()), base_url="https://fanoos.example")
+    assert "max-age=" in api.get("/health").headers["strict-transport-security"]
+
+
+def test_docs_only_in_development() -> None:
+    assert TestClient(server.create_app(settings())).get("/docs").status_code == 404
+    assert TestClient(server.create_app(settings(env="development"))).get("/docs").status_code == 200
+
+
+def test_rate_limit(app_factory, monkeypatch) -> None:
+    monkeypatch.setattr(server, "check_url", lambda url, allow_private=False: None)
+    monkeypatch.setattr(server, "load_source", lambda target, allow_private=False: PortfolioSource("url", target, "x"))
+    api = TestClient(app_factory(rate_limit=(2, 3600)))
+    codes = [api.post("/api/review", json={"url": "https://example.com"}).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
+    last = api.post("/api/review", json={"url": "https://example.com"})
+    assert last.json()["type"] == "RateLimitedError" and int(last.headers["retry-after"]) > 0
+
+
+def test_rate_limiter_window() -> None:
+    limiter = server.RateLimiter(1, 1)
+    limiter.check("a")
+    limiter.check("b")  # separate clients
+    with pytest.raises(server.RateLimitedError):
+        limiter.check("a")
+
+
+def test_production_ignores_client_model_choice(api: TestClient, fake, monkeypatch) -> None:
+    monkeypatch.setattr(server, "load_source", lambda target, allow_private=False: PortfolioSource("url", target, "x"))
+    res = api.post("/api/review", json={"url": "https://example.com", "model": "very-expensive-model"})
+    assert res.status_code == 200 and fake.state.fake.responses.calls[0]["model"] != "very-expensive-model"
+
+
+def test_unexpected_errors_are_generic(app_factory, monkeypatch) -> None:
+    monkeypatch.setattr(server, "check_url", lambda url, allow_private=False: None)
+
+    def explode(target, allow_private=False):
+        raise RuntimeError("/srv/secret/path failed")
+
+    monkeypatch.setattr(server, "load_source", explode)
+    api = TestClient(app_factory(), raise_server_exceptions=False)
+    res = api.post("/api/review", json={"url": "https://example.com"})
+    assert res.status_code == 500 and res.json()["type"] == "InternalError"
+    assert "/srv/secret" not in res.text
+
+
+def test_errors_never_contain_keys(monkeypatch) -> None:
+    from fanoos.errors import APIError, redact
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-value-0123456789")
+    assert "test-value-0123456789" not in redact("provider said: key test-value-0123456789 invalid")
+    assert "[redacted]" in redact("token gsk_" + "a" * 20)
+    app = server.create_app(settings())
+
+    @app.get("/boom")
+    def boom():
+        raise APIError("upstream echoed test-value-0123456789")
+
+    res = TestClient(app).get("/boom")
+    assert "test-value-0123456789" not in res.text
+
+
+def test_health_does_not_leak_settings(api: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-value-0123456789")
+    body = api.get("/health").text
+    assert "test-value" not in body and "rate" not in body and "/home" not in body
+
+
+def test_rejects_other_content_types(api: TestClient, fake) -> None:
+    res = api.post("/api/review", content=b"url=x", headers={"content-type": "text/plain"})
+    assert res.status_code == 400

@@ -10,7 +10,7 @@
 [![CI](https://github.com/zahednegar-hub/fanoos/actions/workflows/ci.yml/badge.svg)](https://github.com/zahednegar-hub/fanoos/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Version](https://img.shields.io/badge/version-0.2.0-d97706)
+![Version](https://img.shields.io/badge/version-0.3.0-d97706)
 
 [What it is](#what-it-is) · [Quickstart](#quickstart) · [Web UI](#web-ui) · [CLI](#cli-reference) · [n8n](#n8n) · [Roadmap](#roadmap) · [فارسی](#فارسی)
 
@@ -182,8 +182,28 @@ Open <http://localhost:8000>. The page is Persian (RTL) by default with an Engli
 | `POST` | `/api/review` | JSON `{"url": "...", "lang": "fa"\|"en", "focus": "..."}`, or multipart with `url` or `file` (PDF) |
 
 Errors return JSON `{"error": "English\nPersian", "type": "..."}` with a matching status code
-(400 bad input, 413 file too large, 429 rate limit, 502 provider error, 503 no key configured).
-Interactive docs are at `/docs` while the server runs.
+(400 bad input or blocked URL, 413 too large, 429 rate limit, 502 provider error, 503 no key
+configured or all review slots busy). Interactive docs at `/docs` exist only with
+`FANOOS_ENV=development`; production (the default) disables them.
+
+## Deploy on cPanel
+
+Fanoos runs on ordinary cPanel shared hosting with **Setup Python App** (Passenger or LiteSpeed):
+no Docker, root, SSH, Node.js or database needed.
+
+```bash
+python tools/build_cpanel_package.py      # → dist/fanoos-v0.3.0-cpanel.zip + .sha256
+```
+
+The ZIP extracts to `fanoos-app/` with a Passenger entry point (`passenger_wsgi.py`, entry point
+`application`, FastAPI adapted to WSGI with `a2wsgi`), pinned `requirements.txt`, `.env.example`
+and two guides: [`README_DEPLOY.md`](deployment/cpanel/README_DEPLOY.md) (English) and
+[`DEPLOY_CPanel_FA.md`](deployment/cpanel/DEPLOY_CPanel_FA.md) (Persian, step by step for beginners).
+
+Production settings (all optional, safe defaults; see `deployment/cpanel/.env.example`):
+`FANOOS_RATE_LIMIT` (default `10/hour` per visitor IP), `FANOOS_MAX_CONCURRENT` (`2`),
+`FANOOS_TIMEOUT` (`180` s), `FANOOS_MAX_UPLOAD_MB` (`15`), `FANOOS_ENV` (`production`),
+`FANOOS_TRUST_PROXY` (`0`), `FANOOS_LOG_LEVEL` (`INFO`).
 
 ## CLI reference
 
@@ -251,8 +271,19 @@ Both were tested on n8n 2.45 (import, publish, end-to-end run). Step-by-step gui
   never returned by the API, and never shown in the UI.
 - Uploaded PDFs are limited to 15 MB and must start with `%PDF`; they are processed in a temporary
   directory and deleted.
-- The server refuses loopback, private and link-local URLs, so it cannot be used to probe your
-  network (set `FANOOS_ALLOW_PRIVATE_URLS=1` to allow them for local testing).
+- SSRF protection: only http(s); every resolved address must be public (loopback, private,
+  link-local/cloud metadata, CGNAT, multicast and reserved ranges are refused); redirects are
+  followed manually and every hop is re-checked; the connected peer is verified against DNS
+  rebinding; only HTML/text is accepted, up to 3 MB. `FANOOS_ALLOW_PRIVATE_URLS=1` exists for
+  local testing only.
+- Request bodies are capped while they stream in, so oversized uploads never reach the disk.
+- A per-IP rate limit and a concurrency cap protect your AI quota; in production visitors cannot
+  choose the provider or model.
+- Every response carries a strict Content-Security-Policy (no inline scripts except the hashed
+  import map), `X-Frame-Options: DENY`, `nosniff`, a referrer and permissions policy, and HSTS
+  over HTTPS. No CORS headers are sent.
+- Error messages are redacted for anything shaped like an API key; unexpected errors return a
+  generic message and are logged without request bodies or secrets.
 - Model output is rendered as text only (no `innerHTML`), so a review cannot inject markup.
 - Before publishing, scan for key prefixes with `grep -rE "xa[i]-|AI[z]a|gs[k]_" .` (the brackets
   stop the command from matching itself). It finds nothing in this repository.
@@ -261,9 +292,10 @@ Both were tested on n8n 2.45 (import, publish, end-to-end run). Step-by-step gui
 
 - [x] **v0.1**: CLI and library, URL and PDF input, streamed bilingual report, structured JSON
 - [x] **v0.2**: brand, xAI/Gemini/Groq providers, web UI with 3D lantern, HTTP API, n8n workflows
-- [ ] **v0.3**: `fanoos polish` for before/after English rewrites of bios and case studies
-- [ ] **v0.4**: follow-up re-reviews that compare against a saved previous review
-- [ ] **v0.5**: screenshot input, so the model can judge visuals directly
+- [x] **v0.3**: production hardening (SSRF, rate limits, CSP) and a tested cPanel/Passenger package
+- [ ] **v0.4**: `fanoos polish` for before/after English rewrites of bios and case studies
+- [ ] **v0.5**: follow-up re-reviews that compare against a saved previous review
+- [ ] **v0.6**: screenshot input, so the model can judge visuals directly
 - [ ] **v1.0**: accounts, saved reports and payments on the same core
 
 ## Contributing
@@ -353,6 +385,12 @@ Groq، گزارش با «بدون جستجوی زنده» مشخص می‌شود
 دو workflow آماده در پوشه‌ی `n8n/` هست: یک webhook که گزارش را به صورت JSON برمی‌گرداند، و یک ربات تلگرام
 اختیاری که به هر لینک پورتفولیو یک گزارش کوتاه فارسی جواب می‌دهد. راهنمای قدم‌به‌قدم:
 [`docs/n8n.md`](docs/n8n.md)
+
+### نصب روی هاست cPanel
+
+راهنمای کامل و قدم‌به‌قدم فارسی برای نصب روی هاست اشتراکی cPanel (بدون نیاز به SSH، داکر یا Node.js) در فایل
+[`deployment/cpanel/DEPLOY_CPanel_FA.md`](deployment/cpanel/DEPLOY_CPanel_FA.md) است. بسته‌ی آماده را با
+`python tools/build_cpanel_package.py` بساز.
 
 ### مجوز
 

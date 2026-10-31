@@ -10,7 +10,7 @@ Quick use::
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .agent import DEFAULT_MODEL, Fanoos
 from .errors import (

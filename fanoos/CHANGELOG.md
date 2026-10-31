@@ -6,6 +6,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-31
+
+### Added
+
+- cPanel / Passenger deployment: `deployment/cpanel/` (Passenger entry point `passenger_wsgi.py`
+  using `a2wsgi`, pinned `requirements.txt`, `.env.example`, English `README_DEPLOY.md` and a
+  Persian step-by-step `DEPLOY_CPanel_FA.md`) and `tools/build_cpanel_package.py`, which builds a
+  reproducible ZIP from an allow-list, refuses forbidden files and key-shaped strings, and writes a
+  SHA-256 checksum.
+- `fanoos.settings`: environment-based server settings with production-safe defaults
+  (`FANOOS_ENV`, `FANOOS_RATE_LIMIT`, `FANOOS_MAX_CONCURRENT`, `FANOOS_TIMEOUT`,
+  `FANOOS_MAX_UPLOAD_MB`, `FANOOS_TRUST_PROXY`, `FANOOS_LOG_LEVEL`).
+- `fanoos.netguard`: SSRF-safe fetching with per-hop redirect validation, DNS-rebinding peer check,
+  content-type allow-list and a 3 MB body cap.
+- `cpanel` optional dependency (`a2wsgi`).
+
+### Security
+
+- Fixed: redirects could lead the URL fetcher to private addresses (the address check ran only on
+  the first URL), and pages were downloaded without a size limit.
+- Added a per-IP rate limit (default 10/hour) and a concurrency cap to protect the AI quota; in
+  production visitors can no longer override the provider or model.
+- Request bodies are limited while they stream in, before multipart spooling.
+- Strict Content-Security-Policy (hashed import map), `X-Frame-Options`, `nosniff`, referrer and
+  permissions policies, HSTS over HTTPS; `/docs` and `/openapi.json` are disabled in production.
+- API-key redaction in every error message; a generic handler for unexpected errors with logging.
+- Uploaded PDFs are named after the visitor's (sanitised) file name when sent to the model, so no
+  server paths leave the server.
+
+### Changed
+
+- The web server no longer imports the CLI (and therefore `rich`); `.env` is read from the
+  application root.
+- Footer API link points to the README, because `/docs` is off in production.
+
 ## [0.2.0] - 2026-10-31
 
 ### Added
@@ -53,6 +88,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   rate limits (429), other API errors, malformed output and unreadable input.
 - Offline pytest suite and GitHub Actions CI on Linux, macOS and Windows with Python 3.10 and 3.12.
 
-[Unreleased]: https://github.com/zahednegar-hub/fanoos/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/zahednegar-hub/fanoos/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/zahednegar-hub/fanoos/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/zahednegar-hub/fanoos/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zahednegar-hub/fanoos/releases/tag/v0.1.0
