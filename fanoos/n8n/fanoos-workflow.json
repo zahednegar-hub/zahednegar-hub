@@ -1,0 +1,101 @@
+{
+  "id": "fanoosReviewHook",
+  "name": "Fanoos · Portfolio review webhook",
+  "nodes": [
+    {
+      "id": "6f1c2a10-1b7e-4a7e-9c41-0f6a1e2b3c01",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "5a0d9e6c-5c3e-4a36-b3a2-7f3c1d2e9a11",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fanoos-review",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "6f1c2a10-1b7e-4a7e-9c41-0f6a1e2b3c02",
+      "name": "Fanoos review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        0
+      ],
+      "notes": "Calls the local Fanoos server. Start it with: uvicorn server:app (port 8000). In Docker, use http://host.docker.internal:8000.",
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/review",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.body.url, lang: $json.body.lang || 'fa', focus: $json.body.focus || '' }) }}",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "6f1c2a10-1b7e-4a7e-9c41-0f6a1e2b3c03",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fanoos review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fanoos review": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

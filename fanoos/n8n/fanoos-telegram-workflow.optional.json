@@ -1,0 +1,239 @@
+{
+  "id": "fanoosTelegramBt",
+  "name": "Fanoos · Telegram bot (optional)",
+  "nodes": [
+    {
+      "id": "7a2b3c40-0000-4000-8000-000000000001",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "7a2b3c40-0000-4000-8000-0000000000aa",
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "id": "7a2b3c40-0000-4000-8000-000000000002",
+      "name": "Has a link?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.message.text || '' }}",
+              "rightValue": "https?://\\S+",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7a2b3c40-0000-4000-8000-000000000003",
+      "name": "Tell user we're reviewing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        -100
+      ],
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "🏮 فانوس دارد پورتفولیوی تو را می‌خواند… معمولاً یک تا دو دقیقه طول می‌کشد.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "id": "7a2b3c40-0000-4000-8000-000000000004",
+      "name": "Fanoos review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/review",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $('Telegram Trigger').first().json.message.text.match(/https?:\\/\\/[^\\s،,)»\"]+/)[0], lang: 'fa' }) }}",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "7a2b3c40-0000-4000-8000-000000000005",
+      "name": "Format reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// Turn the Fanoos review JSON into a Telegram message (max 4096 characters).\nconst r = $input.first().json;\nconst chatId = $('Telegram Trigger').first().json.message.chat.id;\nif (r.error) {\n  return [{ json: { chatId, text: '⚠️ ' + r.error } }];\n}\nconst fa = (n) => Number(n).toLocaleString('fa-IR');\nconst labels = {\n  narrative: 'روایت', visual_craft: 'کیفیت بصری', case_study_depth: 'عمق کیس‌استادی',\n  english_quality: 'کیفیت انگلیسی', international_readiness: 'آمادگی بین‌المللی',\n};\nconst lines = [];\nlines.push('🏮 ' + (r.verdict || ''));\nif (r.overall_score != null) lines.push('امتیاز کل: ' + fa(r.overall_score) + '/۱۰۰');\nlines.push('');\nfor (const [k, v] of Object.entries(r.scores || {})) lines.push('• ' + (labels[k] || k) + ': ' + fa(v));\nif ((r.critical_issues || []).length) {\n  lines.push('', 'مشکلات حیاتی:');\n  r.critical_issues.slice(0, 3).forEach((i, n) => lines.push(fa(n + 1) + '. ' + i.issue + (i.fix ? '\\n   ← ' + i.fix : '')));\n}\nif ((r.next_actions || []).length) {\n  lines.push('', 'سه قدم بعدی:');\n  r.next_actions.slice(0, 3).forEach((a, n) => lines.push(fa(n + 1) + '. ' + a));\n}\nif (r.live_search === false) lines.push('', 'بدون جستجوی زنده');\nlet text = lines.join('\\n');\nif (text.length > 4000) text = text.slice(0, 3990) + '…';\nreturn [{ json: { chatId, text } }];"
+      }
+    },
+    {
+      "id": "7a2b3c40-0000-4000-8000-000000000006",
+      "name": "Send review",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        -100
+      ],
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "id": "7a2b3c40-0000-4000-8000-000000000007",
+      "name": "Ask for a link",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        120
+      ],
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "سلام! لینک پورتفولیوی خودت را بفرست (با https:// شروع شود) تا فانوس آن را بررسی کند.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Has a link?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has a link?": {
+      "main": [
+        [
+          {
+            "node": "Tell user we're reviewing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for a link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tell user we're reviewing": {
+      "main": [
+        [
+          {
+            "node": "Fanoos review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fanoos review": {
+      "main": [
+        [
+          {
+            "node": "Format reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format reply": {
+      "main": [
+        [
+          {
+            "node": "Send review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false,
+  "tags": []
+}
